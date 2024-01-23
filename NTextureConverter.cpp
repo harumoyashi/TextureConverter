@@ -1,12 +1,26 @@
 #include "NTextureConverter.h"
 
-void NTextureConverter::ConvertTextureWICToDDS(const std::string& filePath)
+void NTextureConverter::ConvertTextureWICToDDS(const std::string& filePath, int numOptions, char* options[])
 {
 	//テクスチャ読み込み
 	LoadWICTextureFromFile(filePath);
 
 	//DDS形式に変換して書き出し
-	SaveDDSTextureToFile();
+	SaveDDSTextureToFile(numOptions,options);
+}
+
+void NTextureConverter::OutputUsage()
+{
+	printf("画像ファイルをWIC形式からDDS形式に変換します。\n");
+	printf("\n");	//空白行
+	printf("TextureConverter[ドライブ:][パス][ファイル名]\n");
+	printf("\n");	//空白行
+	printf("[ドライブ:][パス][ファイル名]：変換したいWIC形式の画像ファイルを指定します。\n");
+	printf("\n");	//空白行
+	printf("[プロジェクトのプロパティ]→[デバッグ]→[コマンド引数]のパスの末尾に\n");
+	printf("「半角スペース」「-ml」「半角スペース」「ミップレベル」を入力することでミップレベルを指定できます。\n");
+	printf("0を指定することで1×1までのフルミップマップチェーンを生成します。\n");
+	printf("\n");	//空白行
 }
 
 void NTextureConverter::LoadWICTextureFromFile(const std::string& filePath)
@@ -87,12 +101,38 @@ void NTextureConverter::SeparateFilePath(const std::wstring& filePath)
 	fileName_ = exceptExt;
 }
 
-void NTextureConverter::SaveDDSTextureToFile()
+void NTextureConverter::SaveDDSTextureToFile(int numOptions, char* options[])
 {
-	//読み込んだディフューズテクスチャをSRGBとして扱う
-	metadata_.format = DirectX::MakeSRGB(metadata_.format);
+	size_t mipLevel = 0;
+
+	//ミップマップレベル指定を検索
+	for (int i = 0; i < numOptions; i++)
+	{
+		if (std::string(options[i]) == "-ml")
+		{
+			//ミップレベル指定
+			mipLevel = std::stoi(options[i + 1]);
+			break;
+		}
+	}
 
 	HRESULT result;
+
+	//ミップマップ生成
+	DirectX::ScratchImage mipChain;
+	result = GenerateMipMaps(
+		scratchImage_.GetImages(), scratchImage_.GetImageCount(),
+		scratchImage_.GetMetadata(), DirectX::TEX_FILTER_DEFAULT, mipLevel, mipChain);
+
+	if (SUCCEEDED(result))
+	{
+		//イメージとメタデータを、ミップマップ版で置き換える
+		scratchImage_ = std::move(mipChain);
+		metadata_ = scratchImage_.GetMetadata();
+	}
+
+	//読み込んだディフューズテクスチャをSRGBとして扱う
+	metadata_.format = DirectX::MakeSRGB(metadata_.format);
 
 	//出力ファイル名を設定する
 	std::wstring filePath = directoryPath_ + fileName_ + L".dds";
